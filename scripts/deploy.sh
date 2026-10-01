@@ -6,25 +6,20 @@ MODULE_ID="daily_data_cap"
 STAGE="/data/local/tmp/dailycap_stage"
 DIR="/data/adb/modules/${MODULE_ID}"
 
+# Git Bash 会把 /data/... 自动改写成 Git 安装路径，必须禁用
+export MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL="*"
+
 adb wait-for-device
 
-echo ">> 推送模块文件到手机临时目录"
+echo ">> 推送模块文件与安装脚本"
 adb shell "rm -rf ${STAGE} && mkdir -p ${STAGE}"
-adb push module/. "${STAGE}/"
+adb push module "${STAGE}/mod"
+adb push scripts/remote-install.sh "${STAGE}/install.sh"
 
-echo ">> root 复制到 /data/adb/modules 并设置权限"
-adb shell su -c "
-  set -e
-  mkdir -p ${DIR}
-  cp -a ${STAGE}/. ${DIR}/
-  rm -rf ${STAGE}
-  sed -i \"s/{{VERSION}}/dev-\$(date +%m%d%H%M)/; s/{{VCODE}}/\$(date +%s)/\" ${DIR}/module.prop
-  find ${DIR} -type d -exec chmod 755 {} +
-  find ${DIR} -type f -exec chmod 644 {} +
-  chmod 755 ${DIR}/service.sh ${DIR}/uninstall.sh ${DIR}/bin/*.sh
-  sh ${DIR}/bin/dailycap.sh restart || true
-  echo '>> 部署完成'
-"
+echo ">> root 安装到 ${DIR}"
+adb shell "su -c 'sh ${STAGE}/install.sh'"
 
+echo ">> 当前状态："
+adb shell "su -c 'sh ${DIR}/bin/dailycap.sh status'" || true
 echo ">> 最近日志："
-adb shell su -c "tail -n 20 /data/adb/modules/${MODULE_ID}/data/engine.log 2>/dev/null || echo '(暂无日志)'"
+adb shell "su -c 'tail -n 10 ${DIR}/data/engine.log'" 2>/dev/null || echo "(暂无日志)"
