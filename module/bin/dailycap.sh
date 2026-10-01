@@ -294,8 +294,11 @@ flow_calib() { # $1=force(1 手动)
       ;;
   esac
   echo 0 > "$DATA/flow_fails"
-  # 日租宝条目 = flowType 3; 对象都是平字段, 按条目起点切行后取
-  ENTRY_=$(printf '%s' "$RESP" | sed 's/{"addUpItemName"/\n{"addUpItemName"/g' | grep '"flowType":"3"' | head -n 1)
+  # 日租宝条目: flowType=3 且带 rzbEndData(每日到期)特征, 防未来多桶时选错;
+  # 套内5M(flowType=1)/定向免费(flowType=2)为长期有效, 不进每日校对
+  ALL3_=$(printf '%s' "$RESP" | sed 's/{"addUpItemName"/\n{"addUpItemName"/g' | grep '"flowType":"3"')
+  ENTRY_=$(printf '%s' "$ALL3_" | grep 'rzbEndData' | head -n 1)
+  [ -z "$ENTRY_" ] && ENTRY_=$(printf '%s' "$ALL3_" | head -n 1)
   C_MB=$(printf '%s' "$ENTRY_" | grep -o '"use":"[0-9.]*"' | head -n 1 | grep -o '[0-9.]*')
   [ -z "$C_MB" ] && { log "CALIB 解析失败: 未找到日租宝use"; return 1; }
   C_RM=$(printf '%s' "$ENTRY_" | grep -o '"remain":"[0-9.]*"' | head -n 1 | grep -o '[0-9.]*')
