@@ -37,13 +37,38 @@ Redmi 9T (chime) · LineageOS 19 (Android 12) · Magisk 27.0 · 中国联通单�
 - 面板显示今日用量进度、当前状态，并提供解除按钮（当日放开 / 到硬顶再断 / 30 分钟后再断）、阈值修改
 - 访问码存于 `/data/adb/modules/daily_data_cap/data/config`（`WEBUI_TOKEN`）
 
-## 开发
+## 开发与发版
 
 ```bash
 ./scripts/deploy.sh      # adb 直推 module/ 到手机并重启守护（日常迭代）
-./scripts/pack.sh 0.1.0  # 本地打包 zip（需要 zip 命令，CI 在 Linux 上执行）
-git tag v0.1.0 && git push --tags   # 触发 Actions：自动构建 zip + Release + 更新 update.json
+./scripts/pack.sh 0.1.0  # 本地打包 zip（需要 zip 命令；Windows 可跳过，用 CI）
 ```
+
+**构建产物 / 发版（无需本地环境，agent 可直接执行）：**
+
+```bash
+git tag v0.x.y && git push origin v0.x.y   # 就这一步
+```
+
+- 推送 tag 后 GitHub Actions 自动完成：打 zip + 生成 update.json → 挂到 Release，约 15 秒
+- 版本号规则：**v 前缀由 CI 统一添加**，`module.prop` 模板里是 `version={{VERSION}}`，不要手工改版本号
+- 改过 workflow 或脚本后必须先推 main 再打 tag（CI 使用 tag 指向提交里的流水线定义）
+- 验证产物：
+
+```bash
+gh release view v0.x.y --json assets --jq '.assets[].name'   # 应列出 zip + update.json
+gh release download v0.x.y --pattern "daily-data-cap.zip"    # 下载后可用 python zipfile 检查 module.prop 版本
+```
+
+- 手机端实测刷入（不影响 data/ 里的凭证与统计）：
+
+```bash
+adb push daily-data-cap.zip /data/local/tmp/ddc.zip
+adb shell "su -c 'magisk --install-module /data/local/tmp/ddc.zip'"
+```
+
+- 更新通道：`module.prop` 的 updateJson 指向 `releases/latest/download/update.json`，Magisk 管理器据此提示升级，发新版即自动生效
+- 历史教训：zip 无 META-INF 也能刷（Magisk 27 内置安装器接管）；模板与 CI 双方都加 v 会产生 `vv0.1.0` 这类版本号
 
 目录结构：
 
