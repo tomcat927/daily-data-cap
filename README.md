@@ -25,23 +25,19 @@ Redmi 9T (chime) · LineageOS 19 (Android 12) · Magisk 27.0 · 中国联通单�
 
 ## 使用
 
-**第一次打开面板（拿到面板网址，三选一）：**
+**打开面板：手机浏览器访问 `http://127.0.0.1:8899`**
 
-1. **通知栏**：模块首次启动时会发一条通知，里面就是完整的面板网址
-2. **连过电脑的**：`adb shell su -c 'cat /data/adb/modules/daily_data_cap/data/config'`，取其中 `WEBUI_TOKEN=` 的值
-3. **装了终端 App 的**：`su -c 'cat /data/adb/modules/daily_data_cap/data/config'`
+- 首次打开会要求输入**访问码**，三选一获取：
+  1. 模块首次启动时发的系统通知里就有
+  2. `adb shell su -c 'cat /data/adb/modules/daily_data_cap/data/config'`，取 `WEBUI_TOKEN=` 的值
+  3. 装了终端 App 的：`su -c 'cat /data/adb/modules/daily_data_cap/data/config'`
+- 访问码只需输入一次（浏览器记住），以后桌面图标一点就开
 
-然后手机浏览器打开：
-
-```
-http://127.0.0.1:8899/cgi-bin/action?t=<你的WEBUI_TOKEN>
-```
-
-**建议立刻用 Chrome 菜单 →「添加到主屏幕」**，以后桌面图标一点就开，和 app 无异。
+**建议立刻用 Chrome 菜单 →「添加到主屏幕」**，和 app 无异。
 
 - 面板显示今日用量进度、当前状态，并提供解除按钮（当日放开 / 到硬顶再断 / 30 分钟后再断）、阈值修改
-- 面板只监听本机 127.0.0.1，且操作需 token——防止手机里其他应用偷偷调"解除"
-- token 存于 `/data/adb/modules/daily_data_cap/data/config`，删掉该文件重启守护可重新生成
+- 面板只监听本机 127.0.0.1，且所有操作需访问码——防止手机里其他应用偷偷调"解除"
+- 访问码存于 `/data/adb/modules/daily_data_cap/data/config`，删掉该文件重启守护可重新生成
 
 ## 开发
 

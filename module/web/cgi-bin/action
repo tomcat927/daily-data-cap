@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# WebUI: 状态页 + 按钮动作 (busybox httpd CGI)
+# WebUI 后端: 动作 + JSON 状态 (页面本体是 web/index.html, 由 httpd 直接服务)
 # 入口: /cgi-bin/action?t=<token>[&do=...][&fmt=json]
 MODDIR="/data/adb/modules/daily_data_cap"
 DATA="$MODDIR/data"
@@ -14,9 +14,7 @@ if [ -z "$TOKEN" ] || [ "$(Q t)" != "$TOKEN" ]; then
   exit 0
 fi
 
-BASE="/cgi-bin/action?t=$TOKEN"
-
-# ---- 动作: 写命令文件, 引擎 5 秒内执行 ----
+# ---- 动作: 写命令文件, 引擎 5 秒内执行; 完成后回首页 ----
 DO="$(Q do)"
 case "$DO" in
   lift_midnight) printf 'LIFT:MIDNIGHT\n'  > "$DATA/cmd" ;;
@@ -29,12 +27,15 @@ case "$DO" in
     case "$V" in ''|*[!0-9]*) ;; *) printf 'SETTHRESH:%s\n' "$V" > "$DATA/cmd" ;; esac
     ;;
 esac
-if [ -n "$DO" ]; then
-  printf 'Location: %s\r\n\r\n' "$BASE"
+[ -n "$DO" ] && { printf 'Location: /\r\n\r\n'; exit 0; }
+
+# ---- 兼容旧的长网址入口 / 缺 fmt: 跳首页 ----
+if [ "$(Q fmt)" != "json" ]; then
+  printf 'Location: /\r\n\r\n'
   exit 0
 fi
 
-# ---- 状态数据 ----
+# ---- JSON 状态 ----
 STATE="ACTIVE"; LIFT_MODE="-"
 [ -f "$DATA/state" ] && . "$DATA/state"
 USED=$(cat "$DATA/used_bytes" 2>/dev/null || echo 0)
@@ -42,70 +43,7 @@ THRESHOLD_MB="${THRESHOLD_MB:-900}"
 HARD_CAP_MB="${HARD_CAP_MB:-1024}"
 IFACE=$(head -n 1 "$DATA/ifinfo" 2>/dev/null)
 USED_MB=$($BB awk -v b="$USED" 'BEGIN{printf "%.1f", b/1048576}')
-PCT=$($BB awk -v u="$USED" -v t="$THRESHOLD_MB" 'BEGIN{p=u/1048576/t*100; printf "%d", (p>100)?100:p}')
 
-case "$(Q fmt)" in
-  json)
-    printf 'Content-Type: application/json\r\n\r\n'
-    printf '{"state":"%s","mode":"%s","used_mb":"%s","threshold_mb":%s,"hardcap_mb":%s,"iface":"%s"}' \
-      "$STATE" "$LIFT_MODE" "$USED_MB" "$THRESHOLD_MB" "$HARD_CAP_MB" "$IFACE"
-    exit 0
-    ;;
-esac
-
-# ---- 页面 ----
-case "$STATE" in
-  BLOCKED) BADGE="已断网 BLOCKED";  BGC="#e5484d" ;;
-  LIFTED)  BADGE="已解除 $LIFT_MODE"; BGC="#f5a623" ;;
-  *)       BADGE="计数中 ACTIVE";   BGC="#2fb344" ;;
-esac
-
-BTNL=""
-if [ "$STATE" = "BLOCKED" ]; then
-  BTNL="<a class='btn go' href='$BASE&do=lift_midnight'>当日放开</a><a class='btn go' href='$BASE&do=lift_hardcap'>到 ${HARD_CAP_MB}MB 再断</a><a class='btn go' href='$BASE&do=lift_min&min=30'>30分钟后再断</a>"
-elif [ "$STATE" = "LIFTED" ]; then
-  BTNL="<a class='btn stop' href='$BASE&do=block'>立即重新断网</a>"
-fi
-
-cat <<PAGE
-Content-Type: text/html; charset=utf-8
-
-<!DOCTYPE html>
-<html lang="zh"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>DailyCap 流量日帽</title>
-<style>
-body{font-family:system-ui,sans-serif;background:#111;color:#eee;margin:0;display:flex;justify-content:center}
-.card{width:100%;max-width:420px;padding:24px;box-sizing:border-box}
-.bar{background:#333;border-radius:8px;height:14px;overflow:hidden;margin:10px 0}
-.bar>div{background:linear-gradient(90deg,#2fb344,#e5c840);height:100%;transition:width .5s}
-.badge{display:inline-block;padding:3px 10px;border-radius:99px;font-size:13px;background:$BGC;color:#fff;vertical-align:middle}
-.btn{display:inline-block;margin:6px 6px 0 0;padding:10px 14px;border-radius:8px;background:#2c2c2c;color:#eee;text-decoration:none;font-size:14px}
-.btn.go{background:#2fb344;color:#fff}.btn.stop{background:#e5484d;color:#fff}
-form{margin-top:16px}input{padding:8px;border-radius:6px;border:1px solid #444;background:#222;color:#eee}
-button{padding:9px 14px;border-radius:6px;border:0;background:#4a6cf7;color:#fff}
-.small{color:#888;font-size:12px;margin-top:16px;line-height:1.8}
-h1{font-size:20px}b{font-size:34px}
-</style></head><body><div class="card">
-<h1>流量日帽 <span class="badge">$BADGE</span></h1>
-<p>今日 <b id="u">$USED_MB</b> / $THRESHOLD_MB MB</p>
-<div class="bar"><div id="bar" style="width:$PCT%"></div></div>
-<div>$BTNL</div>
-<p><a class="btn" href="$BASE&do=reset" onclick="return confirm('确定清零今日计数?')">清零计数</a></p>
-<form method="get" action="/cgi-bin/action">
-<input type="hidden" name="t" value="$TOKEN">
-<input type="number" name="v" value="$THRESHOLD_MB" min="100" max="1000" style="width:90px">
-<button name="do" value="setthresh">保存阈值</button>
-</form>
-<p class="small">
-数据接口: ${IFACE:-无}<br>
-ACTIVE=计数中 · BLOCKED=已达阈值断网 · LIFTED=人工解除($LIFT_MODE)<br>
-每天 0 点自动清零并恢复网络 · 页面每 5 秒自动刷新
-</p>
-<script>
-setInterval(async()=>{try{const r=await fetch('$BASE&fmt=json');const j=await r.json();
-document.getElementById('u').textContent=j.used_mb;
-document.getElementById('bar').style.width=Math.min(100,j.used_mb*100/j.threshold_mb)+'%';}catch(e){}},5000);
-</script>
-</div></body></html>
-PAGE
+printf 'Content-Type: application/json\r\n\r\n'
+printf '{"state":"%s","mode":"%s","used_mb":"%s","threshold_mb":%s,"hardcap_mb":%s,"iface":"%s"}' \
+  "$STATE" "$LIFT_MODE" "$USED_MB" "$THRESHOLD_MB" "$HARD_CAP_MB" "$IFACE"

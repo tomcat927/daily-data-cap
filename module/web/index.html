@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="zh"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DailyCap 流量日帽</title>
+<style>
+body{font-family:system-ui,sans-serif;background:#111;color:#eee;margin:0;display:flex;justify-content:center}
+.card{width:100%;max-width:420px;padding:24px;box-sizing:border-box}
+.bar{background:#333;border-radius:8px;height:14px;overflow:hidden;margin:10px 0}
+.bar>div{background:linear-gradient(90deg,#2fb344,#e5c840);height:100%;transition:width .5s}
+.badge{display:inline-block;padding:3px 10px;border-radius:99px;font-size:13px;background:#2fb344;color:#fff;vertical-align:middle}
+.btn{display:inline-block;margin:6px 6px 0 0;padding:10px 14px;border-radius:8px;background:#2c2c2c;color:#eee;text-decoration:none;font-size:14px;cursor:pointer}
+.btn.go{background:#2fb344;color:#fff}.btn.stop{background:#e5484d;color:#fff}
+input{padding:8px;border-radius:6px;border:1px solid #444;background:#222;color:#eee;box-sizing:border-box}
+button{padding:9px 14px;border-radius:6px;border:0;background:#4a6cf7;color:#fff;cursor:pointer}
+.small{color:#888;font-size:12px;margin-top:16px;line-height:1.8}
+h1{font-size:20px}b{font-size:34px}
+</style></head><body><div class="card">
+
+<div id="auth" style="display:none">
+  <h1>流量日帽</h1>
+  <p>首次使用请输入访问码：</p>
+  <p class="small">在模块首次启动的系统通知里，或 <code>config</code> 文件的 <code>WEBUI_TOKEN</code>。</p>
+  <input id="tin" style="width:100%" placeholder="访问码 (WEBUI_TOKEN)" autocomplete="off">
+  <p><button id="saveT">进入面板</button></p>
+</div>
+
+<div id="main" style="display:none">
+  <h1>流量日帽 <span class="badge" id="badge">…</span></h1>
+  <p>今日 <b id="u">0.0</b> / <span id="tmb">?</span> MB</p>
+  <div class="bar"><div id="bar" style="width:0%"></div></div>
+  <div id="btns"></div>
+  <p><a class="btn" id="resetBtn">清零计数</a></p>
+  <form id="tf">
+    <input type="number" id="v" min="50" max="2000" style="width:90px">
+    <button type="submit">保存阈值</button>
+  </form>
+  <p class="small" id="iface"></p>
+  <p class="small">每天 0 点自动清零并恢复网络 · 每 5 秒自动刷新</p>
+</div>
+
+</div>
+<script>
+const $=i=>document.getElementById(i);
+let T=localStorage.getItem('dailycap_t')||'';
+function show(){
+  $('auth').style.display=T?'none':'block';
+  $('main').style.display=T?'block':'none';
+}
+$('saveT').onclick=()=>{
+  const v=$('tin').value.trim();
+  if(!v)return;
+  T=v; localStorage.setItem('dailycap_t',v);
+  show(); poll();
+};
+async function act(q){
+  try{ await fetch('/cgi-bin/action?t='+encodeURIComponent(T)+(q||'')); }catch(e){}
+  poll();
+}
+$('btns').addEventListener('click',e=>{
+  const a=e.target.closest('a');
+  if(!a)return;
+  e.preventDefault();
+  act(a.dataset.q);
+});
+$('resetBtn').onclick=()=>{ if(confirm('确定清零今日计数?')) act('&do=reset'); };
+$('tf').onsubmit=e=>{ e.preventDefault(); act('&do=setthresh&v='+$('v').value); };
+async function poll(){
+  if(!T)return;
+  try{
+    const r=await fetch('/cgi-bin/action?t='+encodeURIComponent(T)+'&fmt=json');
+    if(r.status===403){ T=''; localStorage.removeItem('dailycap_t'); show(); return; }
+    const j=await r.json();
+    $('u').textContent=j.used_mb;
+    $('tmb').textContent=j.threshold_mb;
+    $('v').value=j.threshold_mb;
+    $('bar').style.width=Math.min(100,j.used_mb*100/j.threshold_mb)+'%';
+    let bg='#f5a623', txt='已解除 '+(j.mode||'');
+    if(j.state==='ACTIVE'){ bg='#2fb344'; txt='计数中 ACTIVE'; }
+    if(j.state==='BLOCKED'){ bg='#e5484d'; txt='已断网 BLOCKED'; }
+    $('badge').textContent=txt; $('badge').style.background=bg;
+    let h='';
+    if(j.state==='BLOCKED') h=
+      '<a class="btn go" data-q="&do=lift_midnight">当日放开</a>'+
+      '<a class="btn go" data-q="&do=lift_hardcap">到 '+j.hardcap_mb+'MB 再断</a>'+
+      '<a class="btn go" data-q="&do=lift_min&min=30">30分钟后再断</a>';
+    if(j.state==='LIFTED') h='<a class="btn stop" data-q="&do=block">立即重新断网</a>';
+    $('btns').innerHTML=h;
+    $('iface').textContent='数据接口: '+(j.iface||'无');
+  }catch(e){ $('badge').textContent='连接失败'; }
+}
+show(); poll(); setInterval(poll,5000);
+</script>
+</body></html>
