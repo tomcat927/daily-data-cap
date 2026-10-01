@@ -22,6 +22,7 @@ case "$DO" in
   lift_min)      printf 'LIFT:MINUTES:%s\n' "$(Q min)" > "$DATA/cmd" ;;
   block)         printf 'BLOCK\n'          > "$DATA/cmd" ;;
   reset)         printf 'RESET\n'          > "$DATA/cmd" ;;
+  calib)         printf 'CALIB\n'          > "$DATA/cmd" ;;
   setthresh)
     V="$(Q v)"
     case "$V" in ''|*[!0-9]*) ;; *) printf 'SETTHRESH:%s\n' "$V" > "$DATA/cmd" ;; esac
@@ -48,6 +49,18 @@ HARD_CAP_MB="${HARD_CAP_MB:-1024}"
 IFACE=$(head -n 1 "$DATA/ifinfo" 2>/dev/null)
 USED_MB=$($BB awk -v b="$USED" 'BEGIN{printf "%.1f", b/1048576}')
 
+# 校对状态
+CALIB_ON=0
+[ -n "${FLOW_MOBILE:-}" ] && [ -n "${FLOW_PWD_HASH:-}" ] && CALIB_ON=1
+CT=""; CU=""; CR=""; CD=""
+if [ -f "$DATA/carrier" ]; then
+  CT=$($BB awk 'NR==1{print $1" "$2}' "$DATA/carrier" 2>/dev/null)
+  CU=$($BB awk 'NR==1{print $3}' "$DATA/carrier" 2>/dev/null)
+  CR=$($BB awk 'NR==1{print $4}' "$DATA/carrier" 2>/dev/null)
+  CD=$($BB awk -v c="${CU:-0}" -v b="$USED" 'BEGIN{printf "%+.1f", c - b/1048576}')
+fi
+
 printf 'Content-Type: application/json\r\n\r\n'
-printf '{"state":"%s","mode":"%s","used_mb":"%s","threshold_mb":%s,"hardcap_mb":%s,"iface":"%s"}' \
-  "$STATE" "$LIFT_MODE" "$USED_MB" "$THRESHOLD_MB" "$HARD_CAP_MB" "$IFACE"
+printf '{"state":"%s","mode":"%s","used_mb":"%s","threshold_mb":%s,"hardcap_mb":%s,"iface":"%s","calib_on":%s,"calib_time":"%s","carrier_used":"%s","carrier_remain":"%s","diff":"%s"}' \
+  "$STATE" "$LIFT_MODE" "$USED_MB" "$THRESHOLD_MB" "$HARD_CAP_MB" "$IFACE" \
+  "$CALIB_ON" "$CT" "$CU" "$CR" "$CD"

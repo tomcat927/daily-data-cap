@@ -44,6 +44,9 @@ THRESHOLD_MB=900
 HARD_CAP_MB=1024
 WEBUI_PORT=8899
 WEBUI_TOKEN=$TOKEN
+CALIB_INTERVAL=3600
+FLOW_MOBILE=
+FLOW_PWD_HASH=
 EOF
     chmod 600 "$CFG" 2>/dev/null
     log "初始化默认配置"
@@ -155,6 +158,8 @@ do_rollover() {
     $SVC data enable >/dev/null 2>&1 || true
   fi
   set_used 0
+  rm -f "$DATA/carrier"
+  date +%s > "$DATA/last_calib"   # 0点后隔一个校对周期再查, 避开运营商重置延迟拿到昨日旧数据
   date +%Y%m%d > "$DAYF"
   save_state ACTIVE - 0
   notify "Daily Data Cap" "新的一天: 计数清零, 移动数据已恢复。"
@@ -171,6 +176,7 @@ cmd_tick() {
     LIFT:HARDCAP)   do_lift HARDCAP ;;
     LIFT:MINUTES:*) do_lift MINUTES "${C_##*:}" ;;
     BLOCK)          do_block ;;
+    CALIB)   flow_calib 1 ;;
     RESET)
       set_used 0
       notify "Daily Data Cap" "今日计数已手动清零"
@@ -262,6 +268,57 @@ state_tick() {
   esac
 }
 
+# ---------- 营业厅校对 (flow.mxzu.net, 可选) ----------
+# 数据滞后特性决定校对方向: 只上修不下修 —— 营业厅比本地高超过容差说明本地漏计
+flow_calib() { # $1=force(1 手动)
+  [ -n "$FLOW_MOBILE" ] && [ -n "$FLOW_PWD_HASH" ] || return 0
+  read_state
+  [ "$1" != "1" ] && [ "$STATE" = "BLOCKED" ] && return 0   # 断网时查询必失败, 跳过不计失败
+  RESP=$($BB wget -qO- \
+    --header="User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0 Safari/537.36" \
+    --header="Referer: https://flow.mxzu.net/" \
+    "https://flow.mxzu.net/api/get-info?mobile=${FLOW_MOBILE}&password=${FLOW_PWD_HASH}" 2>/dev/null)
+  case "$RESP" in
+    *'"code":200'*) ;;
+    *)
+      FAILS_=$(cat "$DATA/flow_fails" 2>/dev/null || echo 0)
+      FAILS_=$((FAILS_ + 1))
+      echo "$FAILS_" > "$DATA/flow_fails"
+      log "CALIB 失败(${FAILS_}): $(printf '%s' "$RESP" | head -c 120)"
+      if [ "$FAILS_" -ge 3 ]; then
+        sed -i "s/^CALIB_INTERVAL=.*/CALIB_INTERVAL=0/" "$CFG"
+        notify "Daily Data Cap" "营业厅校对连续失败3次, 已自动停用(凭证失效?). 重新配置 config 后可开启"
+        log "CALIB 自动停用"
+      fi
+      return 1
+      ;;
+  esac
+  echo 0 > "$DATA/flow_fails"
+  # 日租宝条目 = flowType 3; 对象都是平字段, 按条目起点切行后取
+  ENTRY_=$(printf '%s' "$RESP" | sed 's/{"addUpItemName"/\n{"addUpItemName"/g' | grep '"flowType":"3"' | head -n 1)
+  C_MB=$(printf '%s' "$ENTRY_" | grep -o '"use":"[0-9.]*"' | head -n 1 | grep -o '[0-9.]*')
+  [ -z "$C_MB" ] && { log "CALIB 解析失败: 未找到日租宝use"; return 1; }
+  C_RM=$(printf '%s' "$ENTRY_" | grep -o '"remain":"[0-9.]*"' | head -n 1 | grep -o '[0-9.]*')
+  RZB_=$(printf '%s' "$ENTRY_" | grep -o '"rzbEndData":"[^"]*"' | cut -d'"' -f4)
+  printf '%s %s %s\n' "$(date '+%m-%d %H:%M')" "$C_MB" "${C_RM:-0}" > "$DATA/carrier"
+  DIFF_=$($BB awk -v c="$C_MB" -v u="$(nmb "$(get_used)")" 'BEGIN{printf "%.1f", c-u}')
+  # 上修条件: 差值>50MB 说明本地漏计; >800MB 视为运营商滞后旧数据(如0点重置未完成), 不校
+  UP_=$($BB awk -v d="$DIFF_" 'BEGIN{print (d>50 && d<800)?1:0}')
+  BIG_=$($BB awk -v d="$DIFF_" 'BEGIN{print (d>=800)?1:0}')
+  if [ "$UP_" = "1" ]; then
+    NEWU_=$($BB awk -v u="$(get_used)" -v d="$DIFF_" 'BEGIN{printf "%d", u + d*1048576}')
+    set_used "$NEWU_"
+    notify "Daily Data Cap" "校对: 营业厅${C_MB}MB明显高于本地, 已补计+${DIFF_}MB"
+    log "CALIB 上修+${DIFF_}MB -> $(nmb "$NEWU_")MB (日包到期: ${RZB_:-未知})"
+  elif [ "$BIG_" = "1" ]; then
+    log "CALIB 偏差异常(${DIFF_}MB), 疑似运营商滞后数据, 不校对 (营业厅${C_MB}MB)"
+  else
+    log "CALIB 偏差${DIFF_}MB 在容差内, 营业厅${C_MB}MB 剩${C_RM}MB (日包到期: ${RZB_:-未知})"
+  fi
+  date +%s > "$DATA/last_calib"
+  return 0
+}
+
 # ---------- WebUI ----------
 start_httpd() {
   load_cfg
@@ -331,6 +388,12 @@ daemon() {
     USED=$(get_used); IFACE=""
     count_tick || true
     state_tick
+    # 定时营业厅校对 (CALIB_INTERVAL=0 关闭; 断网状态内部自动跳过)
+    if [ "${CALIB_INTERVAL:-0}" -gt 0 ]; then
+      LASTC_=$(cat "$DATA/last_calib" 2>/dev/null || echo 0)
+      CN2_=$(date +%s)
+      [ $((CN2_ - LASTC_)) -ge "$CALIB_INTERVAL" ] && flow_calib 0
+    fi
     # WebUI 看门狗
     HP_=$(cat "$HTTPD_PIDF" 2>/dev/null || echo "")
     if [ -z "$HP_" ] || ! kill -0 "$HP_" 2>/dev/null; then start_httpd; fi
