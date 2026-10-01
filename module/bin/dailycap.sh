@@ -47,6 +47,8 @@ WEBUI_TOKEN=$TOKEN
 EOF
     chmod 600 "$CFG" 2>/dev/null
     log "初始化默认配置"
+    sleep 3
+    notify "Daily Data Cap 已启动" "面板: http://127.0.0.1:8899/cgi-bin/action?t=$TOKEN (建议浏览器打开后加入主屏幕)"
   fi
   . "$CFG"
 }
