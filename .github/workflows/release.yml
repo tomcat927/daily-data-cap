@@ -1,0 +1,39 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pack module zip and update.json
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          VCODE="$(date +%s)"
+          mkdir -p dist stage
+          cp -r module/. stage/
+          sed -i "s/{{VERSION}}/${VERSION}/; s/{{VCODE}}/${VCODE}/" stage/module.prop
+          (cd stage && zip -qr ../dist/daily-data-cap.zip .)
+          cat > dist/update.json <<EOF
+          {
+            "version": "${VERSION}",
+            "versionCode": ${VCODE},
+            "zipUrl": "https://github.com/tomcat927/daily-data-cap/releases/latest/download/daily-data-cap.zip",
+            "changelog": "https://github.com/tomcat927/daily-data-cap/releases"
+          }
+          EOF
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/daily-data-cap.zip
+            dist/update.json
+          generate_release_notes: true
