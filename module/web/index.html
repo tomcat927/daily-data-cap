@@ -81,10 +81,10 @@ async function poll(){
     $('tmb').textContent=j.threshold_mb;
     $('v').value=j.threshold_mb;
     $('bar').style.width=Math.min(100,j.used_mb*100/j.threshold_mb)+'%';
-    let bg='#f5a623', txt='已解除 '+(j.mode||'');
-    if(j.state==='ACTIVE'){ bg='#2fb344'; txt='计数中 ACTIVE'; }
-    if(j.state==='BLOCKED'){ bg='#e5484d'; txt='已断网 BLOCKED'; }
-    $('badge').textContent=txt; $('badge').style.background=bg;
+    let bg='#f5a623', bt='已解除 '+(j.mode||'');
+    if(j.state==='ACTIVE'){ bg='#2fb344'; bt='计数中 ACTIVE'; }
+    if(j.state==='BLOCKED'){ bg='#e5484d'; bt='已断网 BLOCKED'; }
+    $('badge').textContent=bt; $('badge').style.background=bg;
     let h='';
     if(j.state==='BLOCKED') h=
       '<a class="btn go" data-q="&do=lift_midnight">当日放开</a>'+
