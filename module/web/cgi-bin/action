@@ -35,8 +35,17 @@ esac
 [ -n "$DO" ] && { printf 'Location: /\r\n\r\n'; exit 0; }
 
 # ---- 兼容旧的长网址入口 / 缺 fmt: 跳首页 ----
-if [ "$(Q fmt)" != "json" ]; then
+if [ "$(Q fmt)" != "json" ] && [ "$(Q fmt)" != "stats" ]; then
   printf 'Location: /\r\n\r\n'
+  exit 0
+fi
+
+# ---- 统计接口: 每日归档 + 最近事件 ----
+if [ "$(Q fmt)" = "stats" ]; then
+  DAYS_=$(tr '\n' ';' < "$DATA/daily.csv" 2>/dev/null)
+  EVTS_=$(tail -n 12 "$DATA/events.log" 2>/dev/null | tr '\n' '~')
+  printf 'Content-Type: application/json\r\n\r\n'
+  printf '{"days":"%s","events":"%s"}' "$DAYS_" "$EVTS_"
   exit 0
 fi
 

@@ -36,6 +36,16 @@ notify() {
   cmd notification post -t "$1" dailycap "$2" >/dev/null 2>&1 || true
 }
 
+# 结构化事件流水(统计用): 日期 时间 类型 详情; 超200KB裁到最近1000行
+evt() { # $1=TYPE $2=details
+  echo "$(date '+%Y-%m-%d %H:%M:%S') $1 ${2:-}" >> "$DATA/events.log" 2>/dev/null
+  if [ "$(wc -c < "$DATA/events.log" 2>/dev/null || echo 0)" -gt 204800 ] 2>/dev/null; then
+    tail -n 1000 "$DATA/events.log" > "$DATA/events.log.t" 2>/dev/null && mv "$DATA/events.log.t" "$DATA/events.log"
+  fi
+}
+
+bump() { echo $(( $(cat "$1" 2>/dev/null || echo 0) + 1 )) > "$1"; }
+
 load_cfg() {
   if [ ! -f "$CFG" ]; then
     TOKEN=1234
@@ -137,6 +147,8 @@ do_block() {
   IFB_=$(get_data_iface) && apply_block "$IFB_"
   notify "Daily Data Cap" "今日用量已达 ${THRESHOLD_MB:-?}MB, 移动数据已断开。解除请打开 WebUI。"
   log "BLOCK 断网生效 used=$(get_used)"
+  bump "$DATA/day_blocks"
+  evt "BLOCK used=$(nmb "$(get_used)")MB iface=${IFB_:-无}"
 }
 
 do_lift() { # $1=mode $2=minutes
@@ -149,6 +161,8 @@ do_lift() { # $1=mode $2=minutes
   esac
   notify "Daily Data Cap" "已人工解除限制(模式 $1), 超出部分按套餐计费。0 点自动恢复。"
   log "LIFT mode=$1 arg=${2:-}"
+  bump "$DATA/day_lifts"
+  evt "LIFT mode=$1 used=$(nmb "$(get_used)")MB"
 }
 
 do_rollover() {
@@ -157,6 +171,17 @@ do_rollover() {
   if [ "$STATE" = "BLOCKED" ]; then
     $SVC data enable >/dev/null 2>&1 || true
   fi
+  # 当日统计归档(清零前): 日期,本地MB,营业厅MB,偏差MB,触发次数,解除次数; tail 40 行 ≈ 保留40天
+  FIN_=$(nmb "$(get_used)")
+  CC_=$($BB awk 'NR==1{print $3}' "$DATA/carrier" 2>/dev/null)
+  CD_=""
+  [ -n "$CC_" ] && CD_=$($BB awk -v c="$CC_" -v f="$FIN_" 'BEGIN{printf "%.1f", c-f}')
+  printf '%s,%s,%s,%s,%s,%s\n' "$(cat "$DAYF" 2>/dev/null)" "$FIN_" "${CC_:-0}" "${CD_:-0}" \
+    "$(cat "$DATA/day_blocks" 2>/dev/null || echo 0)" "$(cat "$DATA/day_lifts" 2>/dev/null || echo 0)" \
+    >> "$DATA/daily.csv"
+  tail -n 40 "$DATA/daily.csv" > "$DATA/daily.csv.t" 2>/dev/null && mv "$DATA/daily.csv.t" "$DATA/daily.csv"
+  echo 0 > "$DATA/day_blocks"; echo 0 > "$DATA/day_lifts"
+  evt "ROLLOVER final=${FIN_}MB carrier=${CC_:-NA}MB"
   set_used 0
   rm -f "$DATA/carrier"
   date +%s > "$DATA/last_calib"   # 0点后隔一个校对周期再查, 避开运营商重置延迟拿到昨日旧数据
@@ -263,6 +288,7 @@ state_tick() {
       if [ -n "$CUR_" ] && [ "$CUR_" != "$IFB_" ]; then
         $SVC data disable >/dev/null 2>&1 || true
         apply_block "$CUR_"
+        evt "REBLOCK iface=$CUR_ (旧:$IFB_)"
       fi
       ;;
   esac

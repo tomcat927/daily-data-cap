@@ -10,6 +10,8 @@ body{font-family:system-ui,sans-serif;background:#111;color:#eee;margin:0;displa
 .badge{display:inline-block;padding:3px 10px;border-radius:99px;font-size:13px;background:#2fb344;color:#fff;vertical-align:middle}
 .btn{display:inline-block;margin:6px 6px 0 0;padding:10px 14px;border-radius:8px;background:#2c2c2c;color:#eee;text-decoration:none;font-size:14px;cursor:pointer}
 .btn.go{background:#2fb344;color:#fff}.btn.stop{background:#e5484d;color:#fff}
+#bars>div{flex:1;background:#2fb344;min-height:2px;border-radius:2px 2px 0 0}
+#bars>div.hit{background:#e5484d}
 input{padding:8px;border-radius:6px;border:1px solid #444;background:#222;color:#eee;box-sizing:border-box}
 button{padding:9px 14px;border-radius:6px;border:0;background:#4a6cf7;color:#fff;cursor:pointer}
 .small{color:#888;font-size:12px;margin-top:16px;line-height:1.8}
@@ -35,6 +37,12 @@ h1{font-size:20px}b{font-size:34px}
   </form>
   <p class="small" id="iface"></p>
   <p class="small" id="calibLine" style="display:none"></p>
+  <p class="small"><a class="btn" id="statsBtn" style="font-size:12px;padding:6px 10px">📊 近30天统计</a></p>
+  <div id="statsBox" style="display:none;background:#1a1a1a;border-radius:8px;padding:12px;margin-top:8px">
+    <div id="bars" style="display:flex;align-items:flex-end;gap:2px;height:80px"></div>
+    <p class="small" style="margin:6px 0 0">每天一根柱：高度=用量/阈值，<span style="color:#e5484d">红色=当天触发过断网</span>，悬停看详情</p>
+    <pre class="small" id="evts" style="white-space:pre-wrap;margin:10px 0 0"></pre>
+  </div>
   <p class="small">每天 0 点自动清零并恢复网络 · 每 5 秒自动刷新</p>
 </div>
 
@@ -63,6 +71,27 @@ $('btns').addEventListener('click',e=>{
   act(a.dataset.q);
 });
 $('resetBtn').onclick=()=>{ if(confirm('确定清零今日计数?')) act('&do=reset'); };
+$('statsBtn').onclick=async()=>{
+  const box=$('statsBox');
+  if(box.style.display==='block'){ box.style.display='none'; return; }
+  box.style.display='block';
+  try{
+    const r=await fetch('/cgi-bin/action?t='+encodeURIComponent(T)+'&fmt=stats');
+    const j=await r.json();
+    const th=parseFloat($('tmb').textContent)||900;
+    const days=(j.days||'').split(';').filter(Boolean);
+    let h='';
+    for(const line of days){
+      const p=line.split(',');
+      if(p.length<6)continue;
+      const pct=Math.min(100,parseFloat(p[1])/th*100);
+      const tip=p[0]+': '+p[1]+'MB (营业厅'+p[2]+'MB, 偏差'+p[3]+', 触发'+p[4]+'次 解除'+p[5]+'次)';
+      h+='<div class="'+(p[4]!=='0'?'hit':'')+'" style="height:'+Math.max(2,pct)+'%" title="'+tip+'"></div>';
+    }
+    $('bars').innerHTML=h||'<p class="small" style="margin:0">还没有归档数据(每天0点生成一条)</p>';
+    $('evts').textContent=(j.events||'').split('~').filter(Boolean).join('\n')||'暂无事件';
+  }catch(e){}
+};
 $('calibBtn').onclick=()=>{
   $('calibBtn').textContent='对账中…';
   act('&do=calib');
