@@ -1,6 +1,6 @@
 id=daily_data_cap
 name=Daily Data Cap
-version=v{{VERSION}}
+version={{VERSION}}
 versionCode={{VCODE}}
 author=tomcat927
 description=按日限流: 每日移动数据用量达到阈值自动断网, WebUI 手动解除, 0 点自动恢复. Root 必需.
