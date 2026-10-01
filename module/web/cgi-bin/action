@@ -10,7 +10,7 @@ Q() { printf '%s' "$QUERY_STRING" | tr '&' '\n' | sed -n "s/^$1=//p" | head -n 1
 
 TOKEN="${WEBUI_TOKEN:-}"
 if [ -z "$TOKEN" ] || [ "$(Q t)" != "$TOKEN" ]; then
-  printf 'Content-Type: text/plain; charset=utf-8\r\n\r\n403: token 无效'
+  printf 'Status: 403 Forbidden\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n403: token 无效'
   exit 0
 fi
 
@@ -25,6 +25,10 @@ case "$DO" in
   setthresh)
     V="$(Q v)"
     case "$V" in ''|*[!0-9]*) ;; *) printf 'SETTHRESH:%s\n' "$V" > "$DATA/cmd" ;; esac
+    ;;
+  settoken)
+    V="$(Q v)"
+    case "$V" in ''|*[!A-Za-z0-9]*) ;; *) printf 'SETTOKEN:%s\n' "$V" > "$DATA/cmd" ;; esac
     ;;
 esac
 [ -n "$DO" ] && { printf 'Location: /\r\n\r\n'; exit 0; }

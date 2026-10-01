@@ -38,7 +38,7 @@ notify() {
 
 load_cfg() {
   if [ ! -f "$CFG" ]; then
-    TOKEN=$(head -c 16 /dev/urandom | md5sum | cut -c1-12)
+    TOKEN=1234
     cat > "$CFG" <<EOF
 THRESHOLD_MB=900
 HARD_CAP_MB=1024
@@ -183,6 +183,14 @@ cmd_tick() {
       sed -i "s/^THRESHOLD_MB=.*/THRESHOLD_MB=${V_}/" "$CFG" && . "$CFG"
       notify "Daily Data Cap" "阈值已更新为 ${V_}MB"
       log "SETTHRESH $V_"
+      ;;
+    SETTOKEN:*)
+      V_="${C_##*:}"
+      case "$V_" in ''|*[!A-Za-z0-9]*) log "SETTOKEN 非法值"; return ;; esac
+      if [ "${#V_}" -lt 4 ] || [ "${#V_}" -gt 16 ]; then log "SETTOKEN 长度非法"; return; fi
+      sed -i "s/^WEBUI_TOKEN=.*/WEBUI_TOKEN=${V_}/" "$CFG"
+      notify "Daily Data Cap" "面板访问码已更新"
+      log "SETTOKEN 访问码已更新"
       ;;
     *) [ -n "$C_" ] && log "未知命令: $C_" ;;
   esac

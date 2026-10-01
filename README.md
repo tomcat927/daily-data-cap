@@ -27,17 +27,13 @@ Redmi 9T (chime) · LineageOS 19 (Android 12) · Magisk 27.0 · 中国联通单�
 
 **打开面板：手机浏览器访问 `http://127.0.0.1:8899`**
 
-- 首次打开会要求输入**访问码**，三选一获取：
-  1. 模块首次启动时发的系统通知里就有
-  2. `adb shell su -c 'cat /data/adb/modules/daily_data_cap/data/config'`，取 `WEBUI_TOKEN=` 的值
-  3. 装了终端 App 的：`su -c 'cat /data/adb/modules/daily_data_cap/data/config'`
-- 访问码只需输入一次（浏览器记住），以后桌面图标一点就开
+- 首次打开输入访问码 **1234**（默认值，输入一次浏览器就记住）；可在面板里点"修改访问码"换成自己的
+- 面板只监听本机 127.0.0.1，外网/局域网无法访问；访问码只是防手机内其他应用误触"解除"的轻量门槛
 
 **建议立刻用 Chrome 菜单 →「添加到主屏幕」**，和 app 无异。
 
 - 面板显示今日用量进度、当前状态，并提供解除按钮（当日放开 / 到硬顶再断 / 30 分钟后再断）、阈值修改
-- 面板只监听本机 127.0.0.1，且所有操作需访问码——防止手机里其他应用偷偷调"解除"
-- 访问码存于 `/data/adb/modules/daily_data_cap/data/config`，删掉该文件重启守护可重新生成
+- 访问码存于 `/data/adb/modules/daily_data_cap/data/config`（`WEBUI_TOKEN`）
 
 ## 开发
 

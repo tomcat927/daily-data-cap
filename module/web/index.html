@@ -18,9 +18,8 @@ h1{font-size:20px}b{font-size:34px}
 
 <div id="auth" style="display:none">
   <h1>流量日帽</h1>
-  <p>首次使用请输入访问码：</p>
-  <p class="small">在模块首次启动的系统通知里，或 <code>config</code> 文件的 <code>WEBUI_TOKEN</code>。</p>
-  <input id="tin" style="width:100%" placeholder="访问码 (WEBUI_TOKEN)" autocomplete="off">
+  <p>首次使用请输入访问码（默认 <b>1234</b>，可在面板里修改）：</p>
+  <input id="tin" style="width:100%" placeholder="访问码" autocomplete="off">
   <p><button id="saveT">进入面板</button></p>
 </div>
 
@@ -29,7 +28,7 @@ h1{font-size:20px}b{font-size:34px}
   <p>今日 <b id="u">0.0</b> / <span id="tmb">?</span> MB</p>
   <div class="bar"><div id="bar" style="width:0%"></div></div>
   <div id="btns"></div>
-  <p><a class="btn" id="resetBtn">清零计数</a></p>
+  <p><a class="btn" id="resetBtn">清零计数</a><a class="btn" id="chpwBtn">修改访问码</a></p>
   <form id="tf">
     <input type="number" id="v" min="50" max="2000" style="width:90px">
     <button type="submit">保存阈值</button>
@@ -63,13 +62,21 @@ $('btns').addEventListener('click',e=>{
   act(a.dataset.q);
 });
 $('resetBtn').onclick=()=>{ if(confirm('确定清零今日计数?')) act('&do=reset'); };
+$('chpwBtn').onclick=()=>{
+  const v=prompt('新的访问码 (4-16 位字母或数字)');
+  if(!v)return;
+  if(!/^[A-Za-z0-9]{4,16}$/.test(v)){ alert('格式不对: 4-16 位字母或数字'); return; }
+  T=v; localStorage.setItem('dailycap_t',v);
+  act('&do=settoken&v='+encodeURIComponent(v));
+};
 $('tf').onsubmit=e=>{ e.preventDefault(); act('&do=setthresh&v='+$('v').value); };
 async function poll(){
   if(!T)return;
   try{
     const r=await fetch('/cgi-bin/action?t='+encodeURIComponent(T)+'&fmt=json');
-    if(r.status===403){ T=''; localStorage.removeItem('dailycap_t'); show(); return; }
-    const j=await r.json();
+    const txt=await r.text();
+    if(txt.indexOf('403')===0){ T=''; localStorage.removeItem('dailycap_t'); show(); return; }
+    const j=JSON.parse(txt);
     $('u').textContent=j.used_mb;
     $('tmb').textContent=j.threshold_mb;
     $('v').value=j.threshold_mb;
