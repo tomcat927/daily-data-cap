@@ -7,3 +7,4 @@ ip6tables -D OUTPUT -m comment --comment dailycap -j DAILYCAP >/dev/null 2>&1
 iptables -F DAILYCAP >/dev/null 2>&1; iptables -X DAILYCAP >/dev/null 2>&1
 ip6tables -F DAILYCAP >/dev/null 2>&1; ip6tables -X DAILYCAP >/dev/null 2>&1
 svc data enable >/dev/null 2>&1
+rm -rf /data/adb/daily_data_cap

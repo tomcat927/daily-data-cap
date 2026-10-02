@@ -35,7 +35,8 @@ Redmi 9T (chime) · LineageOS 19 (Android 12) · Magisk 27.0 · 中国联通单�
 **建议立刻用 Chrome 菜单 →「添加到主屏幕」**，和 app 无异。
 
 - 面板显示今日用量进度、当前状态，并提供解除按钮（当日放开 / 到硬顶再断 / 30 分钟后再断）、阈值修改
-- 访问码存于 `/data/adb/modules/daily_data_cap/data/config`（`WEBUI_TOKEN`）
+
+**运行时数据**（访问码、凭证、统计、事件）存于 `/data/adb/daily_data_cap/`——在模块目录之外，**升级/重刷模块不会丢失**；卸载模块时自动清除。改动其中的 `config` 后需执行 `dailycap.sh restart` 生效。
 
 ## 开发与发版
 

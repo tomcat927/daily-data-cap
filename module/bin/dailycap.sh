@@ -3,7 +3,8 @@
 # 用法: dailycap.sh {start|stop|restart|status|daemon|babysit|block|lift|liftmin N|reset}
 
 MODDIR="/data/adb/modules/daily_data_cap"
-DATA="$MODDIR/data"
+# 运行时数据放模块目录外: Magisk 升级时会整体替换模块目录, 放里面升级即丢
+DATA="/data/adb/daily_data_cap"
 BB="/data/adb/magisk/busybox"
 IPT="/system/bin/iptables"
 IPT6="/system/bin/ip6tables"
