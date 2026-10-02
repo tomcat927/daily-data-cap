@@ -149,6 +149,7 @@ do_block() {
   notify "Daily Data Cap" "今日用量已达 ${THRESHOLD_MB:-?}MB, 移动数据已断开。解除请打开 WebUI。"
   log "BLOCK 断网生效 used=$(get_used)"
   bump "$DATA/day_blocks"
+  date '+%H:%M:%S' >> "$DATA/day_block_times"
   evt "BLOCK used=$(nmb "$(get_used)")MB iface=${IFB_:-无}"
 }
 
@@ -194,16 +195,18 @@ do_rollover() {
   if [ "$STATE" = "BLOCKED" ]; then
     $SVC data enable >/dev/null 2>&1 || true
   fi
-  # 当日统计归档(清零前): 日期,本地MB,营业厅MB,偏差MB,触发次数,解除次数; tail 40 行 ≈ 保留40天
+  # 当日统计归档(清零前): 日期,本地MB,营业厅MB,偏差MB,触发次数,解除次数,BLOCK时间(|分隔)
   FIN_=$(nmb "$(get_used)")
   CC_=$($BB awk 'NR==1{print $3}' "$DATA/carrier" 2>/dev/null)
   CD_=""
   [ -n "$CC_" ] && CD_=$($BB awk -v c="$CC_" -v f="$FIN_" 'BEGIN{printf "%.1f", c-f}')
-  printf '%s,%s,%s,%s,%s,%s\n' "$(cat "$DAYF" 2>/dev/null)" "$FIN_" "${CC_:-0}" "${CD_:-0}" \
+  BT_=$(tr '\n' '|' < "$DATA/day_block_times" 2>/dev/null | sed 's/|$//')
+  printf '%s,%s,%s,%s,%s,%s,%s\n' "$(cat "$DAYF" 2>/dev/null)" "$FIN_" "${CC_:-0}" "${CD_:-0}" \
     "$(cat "$DATA/day_blocks" 2>/dev/null || echo 0)" "$(cat "$DATA/day_lifts" 2>/dev/null || echo 0)" \
+    "$BT_" \
     >> "$DATA/daily.csv"
-  tail -n 40 "$DATA/daily.csv" > "$DATA/daily.csv.t" 2>/dev/null && mv "$DATA/daily.csv.t" "$DATA/daily.csv"
-  echo 0 > "$DATA/day_blocks"; echo 0 > "$DATA/day_lifts"
+  tail -n 184 "$DATA/daily.csv" > "$DATA/daily.csv.t" 2>/dev/null && mv "$DATA/daily.csv.t" "$DATA/daily.csv"
+  echo 0 > "$DATA/day_blocks"; echo 0 > "$DATA/day_lifts"; : > "$DATA/day_block_times"
   evt "ROLLOVER final=${FIN_}MB carrier=${CC_:-NA}MB"
   # 每应用归档: 结束日的 0 点 epoch = 当前时刻减去今天已走的时分秒 (翻转刚发生, 结束日即刚过的那天)
   H_=$(date +%H | sed 's/^0//'); M_=$(date +%M | sed 's/^0//'); S_=$(date +%S | sed 's/^0//')

@@ -89,11 +89,13 @@ $('statsBtn').onclick=async()=>{
       const p=line.split(',');
       if(p.length<6)continue;
       const pct=Math.min(100,parseFloat(p[1])/th*100);
-      const tip=p[0]+': '+p[1]+'MB (营业厅'+p[2]+'MB, 偏差'+p[3]+', 触发'+p[4]+'次 解除'+p[5]+'次)';
+      const times=(p[6]||'').split('|').filter(Boolean);
+      const tip=p[0]+': '+p[1]+'MB (营业厅'+p[2]+'MB, 偏差'+p[3]+', 触发'+p[4]+'次 解除'+p[5]+'次)'+(times.length?'；BLOCK时间 '+times.join('、'):'');
       h+='<div class="'+(p[4]!=='0'?'hit':'')+'" style="height:'+Math.max(2,pct)+'%" title="'+tip+'"></div>';
     }
     $('bars').innerHTML=h||'<p class="small" style="margin:0">还没有归档数据(每天0点生成一条)</p>';
-    $('evts').textContent=(j.events||'').split('~').filter(Boolean).join('\n')||'暂无事件';
+    const blockDays=days.map(line=>{const p=line.split(',');return p.length>6&&p[6]?p[0]+' BLOCK时间: '+p[6].split('|').join('、'):''}).filter(Boolean);
+    $('evts').textContent=blockDays.join('\n')+'\n'+((j.events||'').split('~').filter(Boolean).join('\n')||'暂无事件');
   }catch(e){}
 };
 $('calibBtn').onclick=()=>{

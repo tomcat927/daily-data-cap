@@ -43,7 +43,7 @@ fi
 
 # ---- 统计接口: 每日归档 + 最近事件 ----
 if [ "$(Q fmt)" = "stats" ]; then
-  DAYS_=$(tr '\n' ';' < "$DATA/daily.csv" 2>/dev/null)
+  DAYS_=$(tail -n 184 "$DATA/daily.csv" 2>/dev/null | tr '\n' ';')
   EVTS_=$(tail -n 12 "$DATA/events.log" 2>/dev/null | tr '\n' '~')
   printf 'Content-Type: application/json\r\n\r\n'
   printf '{"days":"%s","events":"%s"}' "$DAYS_" "$EVTS_"
