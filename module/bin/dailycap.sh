@@ -165,26 +165,76 @@ do_lift() { # $1=mode $2=minutes
   evt "LIFT mode=$1 used=$(nmb "$(get_used)")MB"
 }
 
-# 每应用用量归档: 结束日的完整排行写入 appstats/<日期>.csv, 滚动保留约 40 天
+# 每应用用量归档: 合并各开机周期快照，写入 appstats/<日期>.csv
 app_archive() { # $1=日期YYYYMMDD $2=该日0点epoch
   mkdir -p "$DATA/appstats" 2>/dev/null
-  sh "$MODDIR/bin/appstats.sh" "$2" > "$DATA/appstats/$1.tmp" 2>/dev/null
+  app_snapshot "$1" "$2" || true
+  SNAPOK=1
+  SNAPBOOT=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null)
+  SNAPFILE="$DATA/appstats/$1.$SNAPBOOT.snap"
+  [ -f "$SNAPFILE" ] || SNAPOK=0
+  sh "$MODDIR/bin/appstats.sh" "$2" > "$DATA/appstats/$1.live" 2>/dev/null
+  SNAPLIST=$(ls "$DATA/appstats/$1."*.snap 2>/dev/null)
+  [ -n "$SNAPLIST" ] || SNAPLIST=/dev/null
+  SNAPBOOT=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null)
+  SNAPOK=0
+  for SNAP_ in $SNAPLIST; do
+    SNAPDAY_=$(sed -n '1s/^day=//p' "$SNAP_")
+    SNAPBOOT_=$(sed -n '2s/^boot=//p' "$SNAP_")
+    [ "$SNAPDAY_" = "$1" ] && [ "$SNAPBOOT_" = "$SNAPBOOT" ] && SNAPOK=1
+  done
+  $BB awk -v livefile="$DATA/appstats/$1.live" -v targetday="$1" -v curboot="$SNAPBOOT" '
+    FILENAME==livefile { if($1!="TOTAL" && NF>=2) live[$1]=($2+0)*1048576; next }
+    FNR==1 { boot="" }              # 换文件重置; day= 头就在首行, 不能 next 跳过
+    /^boot=/ { boot=substr($0,6); next }
+    /^day=/ { d=substr($0,5); next }
+    /^time=/ { next }
+    boot!="" && d==targetday && NF>=2 { k=boot SUBSEP $1; if($2+0>v[k])v[k]=$2+0 }
+    END {
+      # 历史开机周期: 取该周期内快照最大值(周期末累计)求和;
+      # 当前周期: 取 max(实时读数, 快照) —— 二者时段重叠, 相加会重复计量
+      for(k in v){
+        split(k,a,SUBSEP); bt=a[1]; u=a[2]
+        if(bt==curboot){ if(v[k]>cur[u])cur[u]=v[k] }
+        else hist[u]+=v[k]
+      }
+      for(u in live){
+        if(!((u in cur)) || live[u]>cur[u]) cur[u]=live[u]
+      }
+      for(u in cur) hist[u]+=cur[u]
+      for(u in hist) if(hist[u]>0) printf "%s %.1f\n",u,hist[u]/1048576
+      for(u in hist) total+=hist[u]
+      printf "TOTAL %.1f\n",total/1048576
+    }
+  ' "$DATA/appstats/$1.live" $SNAPLIST > "$DATA/appstats/$1.tmp" 2>/dev/null
   if grep -q '^TOTAL' "$DATA/appstats/$1.tmp" 2>/dev/null; then
     $BB awk '{
       if ($1=="TOTAL") printf "total,%s\n", $2
       else if (NF>=2) printf "%s,%s\n", $1, $2
     }' "$DATA/appstats/$1.tmp" > "$DATA/appstats/$1.csv"
-    evt "APPARCH day=$1"
+    if [ "$SNAPOK" -eq 1 ]; then evt "APPARCH day=$1"; else evt "APPARCH day=$1 integrity=incomplete_snapshot_missing"; fi
   else
     evt "APPARCH 失败 day=$1"
   fi
   rm -f "$DATA/appstats/$1.tmp"
+  rm -f "$DATA/appstats/$1.live" "$DATA/appstats/$1."*.snap
   N_=$(ls "$DATA/appstats" 2>/dev/null | grep -c '\.csv$')
   if [ "${N_:-0}" -gt 40 ]; then
     for F_ in $(ls "$DATA/appstats" | sort | head -n $((N_ - 40))); do
       rm -f "$DATA/appstats/$F_"
     done
   fi
+}
+
+app_snapshot() { # $1=日期YYYYMMDD $2=当天0点epoch
+  sh "$MODDIR/bin/appstats.sh" "$2" snapshot >/dev/null 2>&1
+  CUR="$DATA/.appstats.snapshot"
+  [ -f "$CUR" ] || return 1
+  CURBOOT=$(sed -n '2s/^boot=//p' "$CUR")
+  CURDAY=$(sed -n '1s/^day=//p' "$CUR")
+  [ -n "$CURBOOT" ] && [ "$CURDAY" = "$1" ] || return 1
+  cp "$CUR" "$DATA/appstats/$1.$CURBOOT.snap"
+  return $?
 }
 
 do_rollover() {
@@ -441,6 +491,14 @@ daemon() {
       LASTC_=$(cat "$DATA/last_calib" 2>/dev/null || echo 0)
       CN2_=$(date +%s)
       [ $((CN2_ - LASTC_)) -ge "$CALIB_INTERVAL" ] && flow_calib 0
+    fi
+    # 每 5 分钟持久化 UID 累计量，跨开机周期保留（失败也顺延, 避免每 5 秒重试打爆 dumpsys）
+    SNAPTS=$(cat "$DATA/appstats_snapshot_time" 2>/dev/null || echo 0)
+    if [ $(( $(date +%s) - SNAPTS )) -ge 300 ]; then
+      SNAPDAY=$(date +%Y%m%d)
+      H_=$(date +%H | sed 's/^0//'); M_=$(date +%M | sed 's/^0//'); S_=$(date +%S | sed 's/^0//')
+      app_snapshot "$SNAPDAY" "$(( $(date +%s) - ${H_:-0}*3600 - ${M_:-0}*60 - ${S_:-0} ))"
+      date +%s > "$DATA/appstats_snapshot_time"
     fi
     # WebUI 看门狗
     HP_=$(cat "$HTTPD_PIDF" 2>/dev/null || echo "")

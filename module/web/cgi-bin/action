@@ -46,10 +46,10 @@ if [ "$(Q fmt)" = "topapps" ]; then
   CACHE="$DATA/topapps.cache"
   NOW_=$(date +%s)
   CT_=$(sed -n '1p' "$CACHE" 2>/dev/null)
+  APPDAYS_=$(ls "$DATA/appstats" 2>/dev/null | grep '\.csv$' | grep -o '^[0-9]*' | sort -rn | tr '\n' ';')
   if [ -n "$CT_" ] && [ "$((NOW_ - CT_))" -le 120 ]; then
     printf '{"topapps":"%s","total_mb":"%s","days":"%s"}' \
-      "$(sed -n '2p' "$CACHE")" "$(sed -n '3p' "$CACHE")" \
-      "$(ls "$DATA/appstats" 2>/dev/null | grep -o '^[0-9]*' | sort -rn | tr '\n' ';')"
+      "$(sed -n '2p' "$CACHE")" "$(sed -n '3p' "$CACHE")" "$APPDAYS_"
     exit 0
   fi
   APPF="$DATA/topapps.cache.raw"
@@ -61,8 +61,7 @@ if [ "$(Q fmt)" = "topapps" ]; then
   done < "$APPF"
   rm -f "$APPF"
   printf '%s\n%s\n%s\n' "$NOW_" "$OUT_" "$TOTMB_" > "$CACHE"
-  printf '{"topapps":"%s","total_mb":"%s","days":"%s"}' "$OUT_" "$TOTMB_" \
-    "$(ls "$DATA/appstats" 2>/dev/null | grep -o '^[0-9]*' | sort -rn | tr '\n' ';')"
+  printf '{"topapps":"%s","total_mb":"%s","days":"%s"}' "$OUT_" "$TOTMB_" "$APPDAYS_"
   exit 0
 fi
 
