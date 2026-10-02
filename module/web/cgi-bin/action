@@ -103,6 +103,7 @@ THRESHOLD_MB="${THRESHOLD_MB:-900}"
 HARD_CAP_MB="${HARD_CAP_MB:-1024}"
 IFACE=$(head -n 1 "$DATA/ifinfo" 2>/dev/null)
 USED_MB=$($BB awk -v b="$USED" 'BEGIN{printf "%.1f", b/1048576}')
+BLOCK_TIMES=$(tr '\n' '、' < "$DATA/day_block_times" 2>/dev/null | sed 's/、$//')
 
 # 校对状态
 CALIB_ON=0
@@ -116,6 +117,6 @@ if [ -f "$DATA/carrier" ]; then
 fi
 
 printf 'Content-Type: application/json\r\n\r\n'
-printf '{"state":"%s","mode":"%s","used_mb":"%s","threshold_mb":%s,"hardcap_mb":%s,"iface":"%s","calib_on":%s,"calib_time":"%s","carrier_used":"%s","carrier_remain":"%s","diff":"%s"}' \
+printf '{"state":"%s","mode":"%s","used_mb":"%s","threshold_mb":%s,"hardcap_mb":%s,"iface":"%s","block_times":"%s","calib_on":%s,"calib_time":"%s","carrier_used":"%s","carrier_remain":"%s","diff":"%s"}' \
   "$STATE" "$LIFT_MODE" "$USED_MB" "$THRESHOLD_MB" "$HARD_CAP_MB" "$IFACE" \
-  "$CALIB_ON" "$CT" "$CU" "$CR" "$CD"
+  "$BLOCK_TIMES" "$CALIB_ON" "$CT" "$CU" "$CR" "$CD"

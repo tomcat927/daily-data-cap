@@ -26,7 +26,7 @@ h1{font-size:20px}b{font-size:34px}
 </div>
 
 <div id="main" style="display:none">
-  <h1>流量日帽 <span class="badge" id="badge">…</span></h1>
+  <h1>流量日帽 <span class="badge" id="badge">…</span> <span id="blockTimes" class="small" style="color:#e5484d;font-weight:normal"></span></h1>
   <p>今日 <b id="u">0.0</b> / <span id="tmb">?</span> MB</p>
   <div class="bar"><div id="bar" style="width:0%"></div></div>
   <div id="btns"></div>
@@ -169,6 +169,7 @@ async function poll(){
     if(j.state==='ACTIVE'){ bg='#2fb344'; bt='计数中 ACTIVE'; }
     if(j.state==='BLOCKED'){ bg='#e5484d'; bt='已断网 BLOCKED'; }
     $('badge').textContent=bt; $('badge').style.background=bg;
+    $('blockTimes').textContent=j.block_times?'今日触发：'+j.block_times:'';
     let h='';
     if(j.state==='BLOCKED') h=
       '<a class="btn go" data-q="&do=lift_midnight">当日放开</a>'+
