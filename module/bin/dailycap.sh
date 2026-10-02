@@ -166,6 +166,28 @@ do_lift() { # $1=mode $2=minutes
   evt "LIFT mode=$1 used=$(nmb "$(get_used)")MB"
 }
 
+# 每应用用量归档: 结束日的完整排行写入 appstats/<日期>.csv, 滚动保留约 40 天
+app_archive() { # $1=日期YYYYMMDD $2=该日0点epoch
+  mkdir -p "$DATA/appstats" 2>/dev/null
+  sh "$MODDIR/bin/appstats.sh" "$2" > "$DATA/appstats/$1.tmp" 2>/dev/null
+  if grep -q '^TOTAL' "$DATA/appstats/$1.tmp" 2>/dev/null; then
+    $BB awk '{
+      if ($1=="TOTAL") printf "total,%s\n", $2
+      else if (NF>=2) printf "%s,%s\n", $1, $2
+    }' "$DATA/appstats/$1.tmp" > "$DATA/appstats/$1.csv"
+    evt "APPARCH day=$1"
+  else
+    evt "APPARCH 失败 day=$1"
+  fi
+  rm -f "$DATA/appstats/$1.tmp"
+  N_=$(ls "$DATA/appstats" 2>/dev/null | grep -c '\.csv$')
+  if [ "${N_:-0}" -gt 40 ]; then
+    for F_ in $(ls "$DATA/appstats" | sort | head -n $((N_ - 40))); do
+      rm -f "$DATA/appstats/$F_"
+    done
+  fi
+}
+
 do_rollover() {
   read_state
   unblock_rules
@@ -183,6 +205,9 @@ do_rollover() {
   tail -n 40 "$DATA/daily.csv" > "$DATA/daily.csv.t" 2>/dev/null && mv "$DATA/daily.csv.t" "$DATA/daily.csv"
   echo 0 > "$DATA/day_blocks"; echo 0 > "$DATA/day_lifts"
   evt "ROLLOVER final=${FIN_}MB carrier=${CC_:-NA}MB"
+  # 每应用归档: 结束日的 0 点 epoch = 当前时刻减去今天已走的时分秒 (翻转刚发生, 结束日即刚过的那天)
+  H_=$(date +%H | sed 's/^0//'); M_=$(date +%M | sed 's/^0//'); S_=$(date +%S | sed 's/^0//')
+  app_archive "$(cat "$DAYF" 2>/dev/null)" "$(( $(date +%s) - ${H_:-0}*3600 - ${M_:-0}*60 - ${S_:-0} ))"
   set_used 0
   rm -f "$DATA/carrier"
   date +%s > "$DATA/last_calib"   # 0点后隔一个校对周期再查, 避开运营商重置延迟拿到昨日旧数据

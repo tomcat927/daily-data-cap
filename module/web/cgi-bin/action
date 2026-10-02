@@ -4,6 +4,7 @@
 DATA="/data/adb/daily_data_cap"
 BB="/data/adb/magisk/busybox"
 DUMP="/system/bin/dumpsys"
+MODDIR="/data/adb/modules/daily_data_cap"
 [ -f "$DATA/config" ] && . "$DATA/config"
 
 Q() { printf '%s' "$QUERY_STRING" | tr '&' '\n' | sed -n "s/^$1=//p" | head -n 1; }
@@ -35,7 +36,7 @@ esac
 [ -n "$DO" ] && { printf 'Location: /\r\n\r\n'; exit 0; }
 
 # ---- 兼容旧的长网址入口 / 缺 fmt: 跳首页 ----
-if [ "$(Q fmt)" != "json" ] && [ "$(Q fmt)" != "stats" ] && [ "$(Q fmt)" != "topapps" ]; then
+if [ "$(Q fmt)" != "json" ] && [ "$(Q fmt)" != "stats" ] && [ "$(Q fmt)" != "topapps" ] && [ "$(Q fmt)" != "appday" ]; then
   printf 'Location: /\r\n\r\n'
   exit 0
 fi
@@ -56,50 +57,41 @@ if [ "$(Q fmt)" = "topapps" ]; then
   NOW_=$(date +%s)
   CT_=$(sed -n '1p' "$CACHE" 2>/dev/null)
   if [ -n "$CT_" ] && [ "$((NOW_ - CT_))" -le 120 ]; then
-    printf '{"topapps":"%s","total_mb":"%s"}' "$(sed -n '2p' "$CACHE")" "$(sed -n '3p' "$CACHE")"
+    printf '{"topapps":"%s","total_mb":"%s","days":"%s"}' \
+      "$(sed -n '2p' "$CACHE")" "$(sed -n '3p' "$CACHE")" \
+      "$(ls "$DATA/appstats" 2>/dev/null | grep -o '^[0-9]*' | sort -rn | tr '\n' ';')"
     exit 0
   fi
-  # 今日本地 0 点 epoch (mksh 32 位算术安全: 各分量分别很小)
-  H_=$(date +%H | sed 's/^0//'); M_=$(date +%M | sed 's/^0//'); S_=$(date +%S | sed 's/^0//')
-  T0_=$(( $(date +%s) - ${H_:-0}*3600 - ${M_:-0}*60 - ${S_:-0} ))
-  $DUMP netstats detail 2>/dev/null | $BB awk -v t0="$T0_" '
-    /^ *ident=/ {
-      mob = ($0 ~ /type=0/)          # 只认蜂窝 ident (type=0), WiFi type=1 天然排除
-      uid = -1
-      if (match($0, /uid=[0-9]+/)) uid = substr($0, RSTART+4, RLENGTH-4) + 0
-    }
-    mob && /^ *st=/ {
-      n = split($0, f, " ")
-      st = 0; rb = 0; tb = 0
-      for (i = 1; i <= n; i++) {
-        if (f[i] ~ /^st=/)      st = substr(f[i], 4) + 0
-        else if (f[i] ~ /^rb=/) rb = substr(f[i], 4) + 0
-        else if (f[i] ~ /^tb=/) tb = substr(f[i], 4) + 0
-      }
-      if (st >= t0) {
-        tot += rb + tb
-        if (uid >= 10000) sum[uid] += rb + tb
-      }
-    }
-    END {
-      printf "T %d\n", tot
-      for (u in sum) if (sum[u] > 0) printf "U %d %d\n", u, sum[u]
-    }
-  ' > "$DATA/topapps.tmp" 2>/dev/null
-  TOT_=$($BB awk '$1=="T"{print $2; exit}' "$DATA/topapps.tmp" 2>/dev/null)
-  grep '^U ' "$DATA/topapps.tmp" 2>/dev/null | sort -k3 -rn | head -n 10 > "$DATA/topapps.sorted"
-  PKGS_=$(pm list packages -U 2>/dev/null)
-  OUT_=""
-  while read -r _tag u b; do
-    N_=$(printf '%s\n' "$PKGS_" | $BB awk -v u="$u" -F'[ :]' '$4==u{print $2; exit}')
-    MB_=$($BB awk -v b="$b" 'BEGIN{printf "%.1f", b/1048576}')
-    OUT_="${OUT_}${N_:-uid$u}:${MB_};"
-  done < "$DATA/topapps.sorted"
-  rm -f "$DATA/topapps.sorted"
-  TOTMB_=$($BB awk -v t="${TOT_:-0}" 'BEGIN{printf "%.1f", t/1048576}')
-  rm -f "$DATA/topapps.tmp"
+  APPF="$DATA/topapps.cache.raw"
+  sh "$MODDIR/bin/appstats.sh" 2>/dev/null | head -n 11 > "$APPF"   # Top10 + TOTAL
+  OUT_=""; TOTMB_="0"
+  while read -r n v; do
+    if [ "$n" = "TOTAL" ]; then TOTMB_="$v"; continue; fi
+    OUT_="${OUT_}${n}:${v};"
+  done < "$APPF"
+  rm -f "$APPF"
   printf '%s\n%s\n%s\n' "$NOW_" "$OUT_" "$TOTMB_" > "$CACHE"
-  printf '{"topapps":"%s","total_mb":"%s"}' "$OUT_" "$TOTMB_"
+  printf '{"topapps":"%s","total_mb":"%s","days":"%s"}' "$OUT_" "$TOTMB_" \
+    "$(ls "$DATA/appstats" 2>/dev/null | grep -o '^[0-9]*' | sort -rn | tr '\n' ';')"
+  exit 0
+fi
+
+# ---- 历史某日的应用排行 ----
+if [ "$(Q fmt)" = "appday" ]; then
+  printf 'Content-Type: application/json\r\n\r\n'
+  D_=$(Q d)
+  case "$D_" in
+    ????????) case "$D_" in *[!0-9]*) D_="" ;; esac ;;
+    *) D_="" ;;
+  esac
+  F_="$DATA/appstats/$D_.csv"
+  if [ -z "$D_" ] || [ ! -f "$F_" ]; then
+    printf '{"date":"%s","apps":"","total_mb":"0"}' "$D_"
+    exit 0
+  fi
+  TOT_=$($BB awk -F, '$1=="total"{print $2; exit}' "$F_")
+  APPS_=$($BB awk -F, '$1!="total" && NF>=2{printf "%s:%s;", $1, $2}' "$F_")
+  printf '{"date":"%s","apps":"%s","total_mb":"%s"}' "$D_" "$APPS_" "${TOT_:-0}"
   exit 0
 fi
 
