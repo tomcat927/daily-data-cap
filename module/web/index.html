@@ -41,6 +41,8 @@ h1{font-size:20px}b{font-size:34px}
   <div id="statsBox" style="display:none;background:#1a1a1a;border-radius:8px;padding:12px;margin-top:8px">
     <div id="bars" style="display:flex;align-items:flex-end;gap:2px;height:80px"></div>
     <p class="small" style="margin:6px 0 0">每天一根柱：高度=用量/阈值，<span style="color:#e5484d">红色=当天触发过断网</span>，悬停看详情</p>
+    <p class="small" style="margin:10px 0 2px"><b>📱 今日应用排行</b> <span id="topappsTotal" style="color:#888"></span></p>
+    <div id="topapps"><p class="small" style="margin:0">加载中…</p></div>
     <pre class="small" id="evts" style="white-space:pre-wrap;margin:10px 0 0"></pre>
   </div>
   <p class="small">每天 0 点自动清零并恢复网络 · 每 5 秒自动刷新</p>
@@ -91,6 +93,27 @@ $('statsBtn').onclick=async()=>{
     $('bars').innerHTML=h||'<p class="small" style="margin:0">还没有归档数据(每天0点生成一条)</p>';
     $('evts').textContent=(j.events||'').split('~').filter(Boolean).join('\n')||'暂无事件';
   }catch(e){}
+  // 应用排行: 独立接口, 慢(1~3s), 失败不打断统计
+  try{
+    const r2=await fetch('/cgi-bin/action?t='+encodeURIComponent(T)+'&fmt=topapps');
+    const j2=await r2.json();
+    const rows=(j2.topapps||'').split(';').filter(x=>x&&x.indexOf(':')>0);
+    let h2='';
+    if(rows.length===0){ h2='<p class="small" style="margin:0">暂无应用流量记录</p>'; }
+    else{
+      for(const it of rows){
+        const ci=it.lastIndexOf(':');
+        const n=it.slice(0,ci), v=parseFloat(it.slice(ci+1));
+        h2+='<div style="display:flex;margin:3px 0;font-size:12px">'+
+            '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:8px">'+n+'</span>'+
+            '<span style="color:#2fb344;min-width:64px;text-align:right">'+v+' MB</span></div>';
+      }
+    }
+    $('topapps').innerHTML=h2;
+    $('topappsTotal').textContent='合计 '+(j2.total_mb||'0')+' MB（本地口径，自上次开机）';
+  }catch(e){
+    $('topapps').innerHTML='<p class="small" style="margin:0">应用排行加载失败</p>';
+  }
 };
 $('calibBtn').onclick=()=>{
   $('calibBtn').textContent='对账中…';
