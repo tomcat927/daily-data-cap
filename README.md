@@ -68,7 +68,7 @@ adb shell "su -c 'magisk --install-module /data/local/tmp/ddc.zip'"
 ```
 
 - 更新通道：`module.prop` 的 updateJson 指向 `releases/latest/download/update.json`，Magisk 管理器据此提示升级，发新版即自动生效
-- 历史教训：zip 无 META-INF 也能刷（Magisk 27 内置安装器接管）；模板与 CI 双方都加 v 会产生 `vv0.1.0` 这类版本号
+- 历史教训：zip 无 META-INF 也能刷（Magisk 27 内置安装器接管）；Magisk 解压**不保留** zip 执行位（一律 644），CGI 权限靠 `customize.sh` 刷入时补——改权限逻辑不要动 zip，改 customize.sh；模板与 CI 双方都加 v 会产生 `vv0.1.0` 这类版本号
 
 目录结构：
 
