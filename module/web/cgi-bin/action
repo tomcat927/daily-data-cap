@@ -1,8 +1,7 @@
 #!/system/bin/sh
 # WebUI 后端: 动作 + JSON 状态 (页面本体是 web/index.html, 由 httpd 直接服务)
 # 入口: /cgi-bin/action?t=<token>[&do=...][&fmt=json]
-MODDIR="/data/adb/modules/daily_data_cap"
-DATA="$MODDIR/data"
+DATA="/data/adb/daily_data_cap"
 BB="/data/adb/magisk/busybox"
 [ -f "$DATA/config" ] && . "$DATA/config"
 
