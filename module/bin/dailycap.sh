@@ -49,12 +49,10 @@ bump() { echo $(( $(cat "$1" 2>/dev/null || echo 0) + 1 )) > "$1"; }
 
 load_cfg() {
   if [ ! -f "$CFG" ]; then
-    TOKEN=1234
     cat > "$CFG" <<EOF
 THRESHOLD_MB=900
 HARD_CAP_MB=1024
 WEBUI_PORT=8899
-WEBUI_TOKEN=$TOKEN
 CALIB_INTERVAL=3600
 FLOW_MOBILE=
 FLOW_PWD_HASH=
@@ -62,7 +60,7 @@ EOF
     chmod 600 "$CFG" 2>/dev/null
     log "初始化默认配置"
     sleep 3
-    notify "Daily Data Cap 已启动" "面板: http://127.0.0.1:8899 (首次打开输入访问码 $TOKEN, 建议加入主屏幕)"
+    notify "Daily Data Cap 已启动" "面板: http://127.0.0.1:8899"
   fi
   . "$CFG"
 }
@@ -244,14 +242,6 @@ cmd_tick() {
       notify "Daily Data Cap" "阈值已更新为 ${V_}MB"
       log "SETTHRESH $V_"
       ;;
-    SETTOKEN:*)
-      V_="${C_##*:}"
-      case "$V_" in ''|*[!A-Za-z0-9]*) log "SETTOKEN 非法值"; return ;; esac
-      if [ "${#V_}" -lt 4 ] || [ "${#V_}" -gt 16 ]; then log "SETTOKEN 长度非法"; return; fi
-      sed -i "s/^WEBUI_TOKEN=.*/WEBUI_TOKEN=${V_}/" "$CFG"
-      notify "Daily Data Cap" "面板访问码已更新"
-      log "SETTOKEN 访问码已更新"
-      ;;
     *) [ -n "$C_" ] && log "未知命令: $C_" ;;
   esac
 }
@@ -384,7 +374,7 @@ start_httpd() {
   rm -f "$HTTPD_PIDF"
   nohup $BB httpd -f -p 127.0.0.1:${WEBUI_PORT:-8899} -h "$MODDIR/web" >/dev/null 2>&1 &
   echo $! > "$HTTPD_PIDF"
-  log "WebUI 启动: http://127.0.0.1:${WEBUI_PORT:-8899}/cgi-bin/action?t=$WEBUI_TOKEN"
+  log "WebUI 启动: http://127.0.0.1:${WEBUI_PORT:-8899}"
 }
 
 # ---------- 进程管理 ----------
@@ -428,7 +418,7 @@ status() {
   if [ -f "$PIDF" ] && kill -0 "$(cat "$PIDF")" 2>/dev/null; then D_="运行中(pid $(cat "$PIDF"))"; else D_="未运行"; fi
   echo "daemon: $D_"
   echo "state: $STATE (mode=$LIFT_MODE)  used: $(nmb "$USED") MB / ${THRESHOLD_MB}MB  iface: $(head -n 1 "$IFINFOF" 2>/dev/null || echo -)  blocked_if: $(cat "$BLOCKED_IF" 2>/dev/null || echo -)"
-  echo "webui: http://127.0.0.1:${WEBUI_PORT:-8899}/cgi-bin/action?t=$WEBUI_TOKEN"
+  echo "webui: http://127.0.0.1:${WEBUI_PORT:-8899}"
 }
 
 daemon() {

@@ -18,19 +18,12 @@ button{padding:9px 14px;border-radius:6px;border:0;background:#4a6cf7;color:#fff
 h1{font-size:20px}b{font-size:34px}
 </style></head><body><div class="card">
 
-<div id="auth" style="display:none">
-  <h1>流量日帽</h1>
-  <p>首次使用请输入访问码（默认 <b>1234</b>，可在面板里修改）：</p>
-  <input id="tin" style="width:100%" placeholder="访问码" autocomplete="off">
-  <p><button id="saveT">进入面板</button></p>
-</div>
-
-<div id="main" style="display:none">
+<div id="main">
   <h1>流量日帽 <span class="badge" id="badge">…</span> <span id="blockTimes" class="small" style="color:#e5484d;font-weight:normal"></span></h1>
   <p>今日 <b id="u">0.0</b> / <span id="tmb">?</span> MB</p>
   <div class="bar"><div id="bar" style="width:0%"></div></div>
   <div id="btns"></div>
-  <p><a class="btn" id="resetBtn">清零计数</a><a class="btn" id="chpwBtn">修改访问码</a><a class="btn" id="calibBtn" style="display:none">立即对账</a></p>
+  <p><a class="btn" id="resetBtn">清零计数</a><a class="btn" id="calibBtn" style="display:none">立即对账</a></p>
   <form id="tf">
     <input type="number" id="v" min="50" max="2000" style="width:90px">
     <button type="submit">保存阈值</button>
@@ -53,19 +46,8 @@ h1{font-size:20px}b{font-size:34px}
 </div>
 <script>
 const $=i=>document.getElementById(i);
-let T=localStorage.getItem('dailycap_t')||'';
-function show(){
-  $('auth').style.display=T?'none':'block';
-  $('main').style.display=T?'block':'none';
-}
-$('saveT').onclick=()=>{
-  const v=$('tin').value.trim();
-  if(!v)return;
-  T=v; localStorage.setItem('dailycap_t',v);
-  show(); poll();
-};
 async function act(q){
-  try{ await fetch('/cgi-bin/action?t='+encodeURIComponent(T)+(q||'')); }catch(e){}
+  try{ await fetch('/cgi-bin/action'+(q||'')); }catch(e){}
   poll();
 }
 $('btns').addEventListener('click',e=>{
@@ -80,7 +62,7 @@ $('statsBtn').onclick=async()=>{
   if(box.style.display==='block'){ box.style.display='none'; return; }
   box.style.display='block';
   try{
-    const r=await fetch('/cgi-bin/action?t='+encodeURIComponent(T)+'&fmt=stats');
+    const r=await fetch('/cgi-bin/action?fmt=stats');
     const j=await r.json();
     const th=parseFloat($('tmb').textContent)||900;
     const days=(j.days||'').split(';').filter(Boolean);
@@ -103,13 +85,6 @@ $('calibBtn').onclick=()=>{
   act('&do=calib');
   setTimeout(poll, 8000);
 };
-$('chpwBtn').onclick=()=>{
-  const v=prompt('新的访问码 (4-16 位字母或数字)');
-  if(!v)return;
-  if(!/^[A-Za-z0-9]{4,16}$/.test(v)){ alert('格式不对: 4-16 位字母或数字'); return; }
-  T=v; localStorage.setItem('dailycap_t',v);
-  act('&do=settoken&v='+encodeURIComponent(v));
-};
 $('tf').onsubmit=e=>{ e.preventDefault(); act('&do=setthresh&v='+$('v').value); };
 function renderApps(str,total){
   const rows=(str||'').split(';').filter(x=>x&&x.indexOf(':')>0);
@@ -128,8 +103,8 @@ function renderApps(str,total){
 async function loadApps(day){
   try{
     const url = day==='today'
-      ? '/cgi-bin/action?t='+encodeURIComponent(T)+'&fmt=topapps'
-      : '/cgi-bin/action?t='+encodeURIComponent(T)+'&fmt=appday&d='+encodeURIComponent(day);
+      ? '/cgi-bin/action?fmt=topapps'
+      : '/cgi-bin/action?fmt=appday&d='+encodeURIComponent(day);
     const r=await fetch(url);
     const j=await r.json();
     renderApps(j.topapps!==undefined?j.topapps:j.apps, j.total_mb);
@@ -148,19 +123,16 @@ const origStatsClick=$('statsBtn').onclick;
 $('statsBtn').onclick=async ev=>{
   await origStatsClick(ev);
   try{
-    const r=await fetch('/cgi-bin/action?t='+encodeURIComponent(T)+'&fmt=topapps');
+    const r=await fetch('/cgi-bin/action?fmt=topapps');
     const j=await r.json();
     await loadAppsDays(j.days);
     await loadApps($('appdaySel').value);
   }catch(e){}
 };
 async function poll(){
-  if(!T)return;
   try{
-    const r=await fetch('/cgi-bin/action?t='+encodeURIComponent(T)+'&fmt=json');
-    const txt=await r.text();
-    if(txt.indexOf('403')===0){ T=''; localStorage.removeItem('dailycap_t'); show(); return; }
-    const j=JSON.parse(txt);
+    const r=await fetch('/cgi-bin/action?fmt=json');
+    const j=await r.json();
     $('u').textContent=j.used_mb;
     $('tmb').textContent=j.threshold_mb;
     $('v').value=j.threshold_mb;
@@ -198,6 +170,6 @@ async function poll(){
     }
   }catch(e){ $('badge').textContent='连接失败'; }
 }
-show(); poll(); setInterval(poll,5000);
+poll(); setInterval(poll,5000);
 </script>
 </body></html>

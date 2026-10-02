@@ -1,6 +1,6 @@
 #!/system/bin/sh
 # WebUI 后端: 动作 + JSON 状态 (页面本体是 web/index.html, 由 httpd 直接服务)
-# 入口: /cgi-bin/action?t=<token>[&do=...][&fmt=json]
+# 入口: /cgi-bin/action[?do=...][&fmt=json]
 DATA="/data/adb/daily_data_cap"
 BB="/data/adb/magisk/busybox"
 DUMP="/system/bin/dumpsys"
@@ -8,12 +8,6 @@ MODDIR="/data/adb/modules/daily_data_cap"
 [ -f "$DATA/config" ] && . "$DATA/config"
 
 Q() { printf '%s' "$QUERY_STRING" | tr '&' '\n' | sed -n "s/^$1=//p" | head -n 1; }
-
-TOKEN="${WEBUI_TOKEN:-}"
-if [ -z "$TOKEN" ] || [ "$(Q t)" != "$TOKEN" ]; then
-  printf 'Status: 403 Forbidden\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n403: token 无效'
-  exit 0
-fi
 
 # ---- 动作: 写命令文件, 引擎 5 秒内执行; 完成后回首页 ----
 DO="$(Q do)"
@@ -27,10 +21,6 @@ case "$DO" in
   setthresh)
     V="$(Q v)"
     case "$V" in ''|*[!0-9]*) ;; *) printf 'SETTHRESH:%s\n' "$V" > "$DATA/cmd" ;; esac
-    ;;
-  settoken)
-    V="$(Q v)"
-    case "$V" in ''|*[!A-Za-z0-9]*) ;; *) printf 'SETTOKEN:%s\n' "$V" > "$DATA/cmd" ;; esac
     ;;
 esac
 [ -n "$DO" ] && { printf 'Location: /\r\n\r\n'; exit 0; }
