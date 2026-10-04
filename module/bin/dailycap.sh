@@ -122,6 +122,17 @@ apply_block() { # $1=iface
     || $IPT6 -I OUTPUT 1 -m comment --comment dailycap -j $CHAIN
   $IPT -F $CHAIN 2>/dev/null
   $IPT6 -F $CHAIN 2>/dev/null
+  # 系统探针白名单: 放行 uid0(netd 的 DNS) 与 uid1051(NetworkStack 连通性探针)。
+  # 否则探针被拦 → Android 把网络标记为"不可用"并回避 → 系统无默认网络 →
+  # 浏览器拒绝加载本机面板, 断网时恰恰需要面板来解除。
+  # uid0 仅放行 53 端口: clatd 以 root 运行, 若放行全部 root 流量,
+  # 经 clat 翻译的应用 IPv4 流量会绕过拦截。
+  $IPT -A $CHAIN -m owner --uid-owner 0 -p udp --dport 53 -j RETURN
+  $IPT -A $CHAIN -m owner --uid-owner 0 -p tcp --dport 53 -j RETURN
+  $IPT -A $CHAIN -m owner --uid-owner 1051 -j RETURN
+  $IPT6 -A $CHAIN -m owner --uid-owner 0 -p udp --dport 53 -j RETURN
+  $IPT6 -A $CHAIN -m owner --uid-owner 0 -p tcp --dport 53 -j RETURN
+  $IPT6 -A $CHAIN -m owner --uid-owner 1051 -j RETURN
   $IPT -A $CHAIN -o "$1" -j REJECT 2>/dev/null
   $IPT6 -A $CHAIN -o "$1" -j REJECT 2>/dev/null
   echo "$1" > "$BLOCKED_IF"
@@ -142,7 +153,9 @@ unblock_rules() {
 do_block() {
   read_state
   save_state BLOCKED - 0
-  $SVC data disable >/dev/null 2>&1 || true
+  # 注意: 不用 svc data disable —— 拆掉数据通道后系统无活动网络,
+  # 浏览器(如 X浏览器)会拒绝加载 127.0.0.1 面板, 而断网时恰恰需要面板来解除。
+  # 拦截完全由 iptables 内核层完成, 数据通道保持连接但流量出不去。
   IFB_=$(get_data_iface) && apply_block "$IFB_"
   notify "Daily Data Cap" "今日用量已达 ${THRESHOLD_MB:-?}MB, 移动数据已断开。解除请打开 WebUI。"
   log "BLOCK 断网生效 used=$(get_used)"
@@ -355,7 +368,6 @@ state_tick() {
       IFB_=$(cat "$BLOCKED_IF" 2>/dev/null || echo "")
       CUR_=$(get_data_iface) || CUR_=""
       if [ -n "$CUR_" ] && [ "$CUR_" != "$IFB_" ]; then
-        $SVC data disable >/dev/null 2>&1 || true
         apply_block "$CUR_"
         evt "REBLOCK iface=$CUR_ (旧:$IFB_)"
       fi
