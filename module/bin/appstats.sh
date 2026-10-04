@@ -1,10 +1,11 @@
 #!/system/bin/sh
 # 每应用蜂窝用量统计 (引擎归档与 WebUI 共用)
-# 用法: appstats.sh [起始epoch] [snapshot]
-#   缺省: 输出 "包名 MB" 降序行 + 末行 "TOTAL 合计MB" (起始epoch 缺省=今日本地 0 点)
-#   snapshot: 额外把 UID 累计快照写入 .appstats.snapshot 并自归档到 appstats/<日>.<boot>.snap
-#   系统只保留开机以来的桶; 本脚本不对 defaultNetwork 标志做过滤 (该标志在这台设备上不稳定,
-#   曾导致归档全空; type=0 的不同 ident 是不同网络/时段, 无重复计量)
+# 用法:
+#   appstats.sh [t0]           当前开机实时用量 (自 t0 起, 缺省今日 0 点)
+#   appstats.sh [t0] day       今日全天: 历史开机周期快照最大值求和 + 当前开机实时
+#   appstats.sh [t0] snapshot  保存 UID 当日累计快照 (reboot.js 重启前调用)
+# 输出: "包名 MB" 降序行, 末行 "TOTAL 合计MB"
+# 系统只保留开机以来的 per-UID 桶; day 模式用快照文件补齐重启前时段
 BB="/data/adb/magisk/busybox"
 DTMP="/data/adb/daily_data_cap/.appstats"
 DROOT="/data/adb/daily_data_cap"
@@ -13,6 +14,7 @@ MODE=""; T0=""
 for A in "$@"; do
   case "$A" in
     snapshot) MODE="snapshot" ;;
+    day) MODE="day" ;;
     ''|*[!0-9]*) ;;
     *) T0="$A" ;;
   esac
@@ -22,7 +24,6 @@ H=$(date +%H | sed 's/^0//'); M=$(date +%M | sed 's/^0//'); S=$(date +%S | sed '
 mkdir -p "$DTMP" 2>/dev/null
 
 if [ "$MODE" = "snapshot" ]; then
-  # UID 当日累计快照: 供跨重启合并 (每个开机周期取最大值)
   SNAP="$DROOT/.appstats.snapshot"
   NOW=$(date +%s)
   BOOT=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null)
@@ -44,6 +45,7 @@ if [ "$MODE" = "snapshot" ]; then
   exit 0
 fi
 
+# ---- 实时解析当前开机当日累计 (type=0 蜂窝 ident, uid>=10000) ----
 pm list packages -U 2>/dev/null | $BB awk -F'[ :]' 'NF>=4{print $4" "$2}' > "$DTMP.pkgs"
 /system/bin/dumpsys netstats detail 2>/dev/null | $BB awk -v t0="$T0" '
   /^ *ident=/ {
@@ -60,20 +62,39 @@ pm list packages -U 2>/dev/null | $BB awk -F'[ :]' 'NF>=4{print $4" "$2}' > "$DT
       else if (f[i] ~ /^rb=/) rb = substr(f[i], 4) + 0
       else if (f[i] ~ /^tb=/) tb = substr(f[i], 4) + 0
     }
-    if (st >= t0) {
-      if (uid >= 10000) sum[uid] += rb + tb
-    }
+    if (st >= t0 && uid >= 10000) sum[uid] += rb + tb
   }
-  END {
-    for (u in sum) if (sum[u] > 0) printf "U %d %d\n", u, sum[u]
-    for (u in sum) tot += sum[u]
-    printf "T %d\n", tot+0
-  }
+  END { for (u in sum) if (sum[u] > 0) printf "U %d %d\n", u, sum[u] }
 ' > "$DTMP.raw"
+$BB awk 'NR==FNR{m[$1]=$2;next} $1=="U"{u=$2;name=(u in m)?m[u]:("uid"u);printf "%s %d\n",name,$3}' "$DTMP.pkgs" "$DTMP.raw" > "$DTMP.named"
 
-sort -k3 -rn "$DTMP.raw" 2>/dev/null | $BB awk '
-  NR==FNR { m[$1]=$2; next }
-  $1=="U" { u=$2; name=(u in m)?m[u]:("uid" u); printf "%s %.1f\n", name, $3/1048576 }
-' "$DTMP.pkgs" -
-grep '^T ' "$DTMP.raw" 2>/dev/null | $BB awk '{printf "TOTAL %.1f\n", $2/1048576}'
-rm -f "$DTMP.pkgs" "$DTMP.raw"
+if [ "$MODE" = "day" ]; then
+  # 历史开机周期: 今日快照中排除当前 boot, 每周期取最大累计(周期末值)求和
+  CURBOOT=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null)
+  DAY=$(date -d @"$T0" +%Y%m%d 2>/dev/null)
+  [ -n "$DAY" ] || DAY=$(date +%Y%m%d)
+  ls "$DROOT/appstats/" 2>/dev/null | grep "^$DAY\." | sed "s|^|$DROOT/appstats/|" > "$DTMP.snaps"
+  DBG=/data/adb/daily_data_cap/.daydebug
+  { echo "==T0=$T0 DAY=$DAY CURBOOT=$CURBOOT"; echo "snaps字节=$(wc -c < "$DTMP.snaps")"; sed -n '1,3p' "$DTMP.snaps"; } >> "$DBG" 2>&1
+  if [ -s "$DTMP.snaps" ]; then
+    $BB awk -v curboot="$CURBOOT" -v targetday="$DAY" '
+      FNR==1 { boot="" }
+      /^boot=/ { boot=substr($0,6); next }
+      /^day=/ { d=substr($0,5); next }
+      /^time=/ { next }
+      boot!="" && d==targetday && NF>=2 { k=boot SUBSEP $1; if($2+0>v[k])v[k]=$2+0 }
+      END { for(k in v){ split(k,a,SUBSEP); if(a[1]!=curboot) h[a[2]]+=v[k] }
+            for(n in h) if(h[n]>0) printf "%s %d\n", n, h[n] }
+    ' $(cat "$DTMP.snaps") > "$DTMP.hist"
+  else
+    : > "$DTMP.hist"
+  fi
+  # 合并: 历史周期 + 当前开机实时 (同名累加, 字节级合并后统一格式化)
+  $BB awk '{h[$1]+=$2} END{for(n in h) if(h[n]>0) printf "%s %.1f\n",n,h[n]/1048576}' \
+    "$DTMP.hist" "$DTMP.named" | sort -k2 -rn
+  $BB awk '{t+=$2} END{printf "TOTAL %.1f\n", t/1048576}' "$DTMP.hist" "$DTMP.named"
+else
+  sort -k2 -rn "$DTMP.named" | $BB awk '{printf "%s %.1f\n",$1,$2/1048576}'
+  $BB awk '{t+=$2} END{printf "TOTAL %.1f\n", t/1048576}' "$DTMP.named"
+fi
+rm -f "$DTMP.pkgs" "$DTMP.raw" "$DTMP.named" "$DTMP.hist" "$DTMP.snaps"
