@@ -34,7 +34,10 @@ log() {
 }
 
 notify() {
-  cmd notification post -t "$1" dailycap "$2" >/dev/null 2>&1 || true
+  # root(uid0) 直发的通知在部分 ROM 上被 NMS 静默丢弃(crDroid 实测),
+  # 经 shell uid2000 转发可正常显示; su 2000 失败(如无 Magisk)则回退 root 直发
+  su 2000 -c "cmd notification post -t '$1' dailycap '$2'" >/dev/null 2>&1 \
+    || cmd notification post -t "$1" dailycap "$2" >/dev/null 2>&1 || true
 }
 
 # 结构化事件流水(统计用): 日期 时间 类型 详情; 超200KB裁到最近1000行

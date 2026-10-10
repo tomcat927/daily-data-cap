@@ -54,6 +54,8 @@ Redmi 9T (chime) · LineageOS 19 (Android 12) · Magisk 27.0 · 中国联通单�
 
 **PC 调试**：`adb forward` 会静默失效（每次先重建）；PC 代理软件会拦发往 127.0.0.1 的请求（`curl --noproxy "*"`）；Git Bash 下 adb/git 的 `/data/...` 路径会被 MSYS 改写（`MSYS_NO_PATHCONV=1`）；Windows 提交的 CRLF 会弄坏 Android shell 脚本（仓库已用 .gitattributes 强制 LF）。
 
+**通知**：root(uid 0) 直发的 `cmd notification post` 在部分 ROM（crDroid 12 / Android 12 实测）会被 NotificationManagerService 静默丢弃（post 返回成功但通知不进通知栏）。`notify()` 经 `su 2000`（shell 身份）转发后正常显示，失败时回退 root 直发保底。
+
 **版本号**：v 前缀由 CI 统一添加，`module.prop` 模板是 `version={{VERSION}}`，手工别加 v。
 
 ## 开发与发版
